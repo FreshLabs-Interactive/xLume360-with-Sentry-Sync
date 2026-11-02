@@ -78,7 +78,7 @@ never have to do that, move the wire to RX2 (GPIO16) and set `XBOX_ON_RX0` to `0
 
 ## Console setup
 
-1. Update to the **xLume 360** app and plugin from the matching `xLume360.zip`.
+1. Update to the **xLume 360** app and Dashlaunch plugin xex files.
 2. In `launch.ini`: keep `debugout = true`, keep the xLume plugin, and **remove the
    `sentry.xex` plugin line**. The xLume 360 app's Tools tab can check both settings for you.
 3. Reboot. Sentry reporting starts at boot even before you've opened the app. The LED side
@@ -95,7 +95,7 @@ The app's Tools tab also has:
   temperatures top left as before, and a **Lighting** panel bottom left with the current effect,
   both colours, brightness, speed, a 12-dot live preview of the strip and the web address.
   Game changes pop up **Now Playing** from `gamelist.txt` for 8 s, and the Xbox IP for 5 s,
-  like SentrySync4. These pages no longer freeze the board while they're shown.
+  like SentrySync4. 
 - **Web page:** `http://<ip>/` or `http://xlume-sentry.local/`.
   - **Console:** temperatures, game, title ID, Xbox IP, SD status, Status/UART screen switch.
   - **Lighting:** effect, both colours, brightness, speed, LED count, Static / Off buttons.
@@ -135,34 +135,11 @@ Your LED look and settings stay.
 - **The xLume 360 app shows as "xLume 360"** on the Now Playing screen even though it isn't in
   `gamelist.txt`.
 
-## Project layout
 
-```
-firmware/xLumeSentry/   the Arduino sketch
-  config.h              your settings
-  protocol.*            xLume + Sentry line parsers (plain C++, unit-tested)
-  led_engine.*          LED effects, own FreeRTOS task, NVS save
-  sentry.*              temps, game lookup, ESP-NOW, web console buffer
-  display.*             TFT pages + lighting panel
-  web.*, web_page.h     web server and page
-docs/                   wiring diagram, previews, gamelist.txt
-prebuilt/               test binary (AP mode)
-tests/                  host tests (run_tests.sh)
-tools/                  diagram + TFT preview generators
-```
 
-## Status
-
-- **Compiles cleanly** for the ESP32 Dev Module (esp32 3.2.0, FastLED 3.9.20,
-  TFT_eSPI 2.5.43) with no warnings in the project code. It uses 1.31 MB, which is 66% of the
-  OTA app partition.
-- **Tested off-hardware:** 36 parser tests, plus 49 end-to-end checks that run the real xLume 360
-  plugin logic into the firmware's parsers. The web page was checked in a real browser at
-  desktop and phone sizes. The TFT layout was rendered with TFT_eSPI's real fonts.
-- **Not yet run on real hardware.** If reds and blues come out swapped on the TFT, change
-  `TFT_SWAP_RED_BLUE`. If the strip shows wrong colours, change `LED_COLOR_ORDER`.
 
 ## Credits
 
-Combined and redesigned by FreshLabs Interactive. Sentry by Element, SentrySync by Element,
-ViolentLamb, Charly Gaber and JFresh. xLume v1 & v2 by Element18592 and xhjuu (MIT).
+Combined and redesigned by **FreshLabs Interactive**.
+Sentry by Element, SentrySync by Element, ViolentLamb, Charly Gaber and JFresh. 
+xLume v1 & v2 by Element18592 and xhjuu (MIT).
