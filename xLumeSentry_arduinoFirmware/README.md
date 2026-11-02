@@ -75,10 +75,6 @@ never have to do that, move the wire to RX2 (GPIO16) and set `XBOX_ON_RX0` to `0
 5. Upload over USB the first time, with the Xbox TX wire disconnected from RX0.
    After that, use OTA (below).
 
-**Quick test without editing anything:** `prebuilt/xLumeSentry_v1.0.0_AP-test_merged.bin`
-can be flashed at address `0x0` with a web flasher such as https://esp.huhn.me (the one the
-xLume README uses). With no Wi-Fi configured it starts its own network, **xLume-Sentry**
-(password `xlume360`), and the web page is at http://192.168.4.1.
 
 ## Console setup
 
