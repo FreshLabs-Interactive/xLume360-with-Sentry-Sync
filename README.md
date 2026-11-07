@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | ![TFT status screen](docs/tft_status_preview.png) | ![Web page](docs/web_page_desktop.png) |
-| TFT: Sentry's temperatures + the new **Lighting** panel (effect, colours, brightness, live strip preview) | Web page: console status, **LED controls**, Sentry's UART console, **firmware upload** |
+| TFT: Sentry's temperatures + the new **Lighting** panel (effect, colours, brightness, live strip preview) | Web page: console status, **LED controls**, Sentry's UART console, **game list editor**, **firmware upload** |
 
 ## How it works
 
@@ -15,7 +15,7 @@ everything the console prints with `DbgPrint` once DashLaunch has `debugout = tr
 
 ```
 Xbox TX ──► ESP32 RX0 ────┬─ "[xLume] - ..."  ──► LED engine (own task, never stutters)
-                           └─ "[Sentry] ..."   ──► TFT, SD game list, ESP-NOW remote
+                           └─ "[Sentry] ..."   ──► TFT, game list, ESP-NOW remote
                            └─ every line       ──► web console
 ```
 
@@ -28,10 +28,14 @@ cleanly.
 
 - ESP32-WROOM-32 dev board (the one SentrySync4 already uses)
 - 2.0" ST7789 240x320 SPI TFT (same as SentrySync4 Sender)
-- Micro SD card module + card (FAT32) with `gamelist.txt` in the root (copy in `docs/`)
 - WS2812B LED strip (the strips xLume recommends)
 - 74AHCT125 level shifter, or at least a 330 Ω resistor for the LED data line
 - Optional: your SentrySync4 receiver (ESP32-C3 + 0.96" TFT in the controller). It keeps working unchanged.
+- Optional: the carrier PCB in `hardware/` (KiCad 8, 39.5 × 65 mm, about the TFT's size: TFT on top, ESP32 underneath), in a level-shifter version and a resistor-only version.
+
+**No SD card needed.** The game list for Now Playing (2,687 titles from Sentry's
+`gamelist.txt`) is built into the firmware. Missing or wrongly named games can be added on the
+web page.
 
 The old xLume board (ESP8266 / ESP-07S) is no longer needed.
 
@@ -47,7 +51,6 @@ The old xLume board (ESP8266 / ESP-07S) is no longer needed.
 | LED strip DIN | GPIO27 → 74AHCT125 (1A→1Y) → 330 Ω → DIN | 1OE and GND of the 74AHCT125 to ground, VCC to 5 V |
 | LED strip +5 V / GND | Xbox 5 V / GND directly | Not through the ESP32 |
 | TFT GND, VCC, SCL, SDA, RES, DC, CS, BLK | GND, 3V3, D22, D21, D4, D2, D15, VIN | Same as SentrySync4 |
-| SD CS, SCK, MOSI, MISO, VCC, GND | D5, D18, D23, D19, VIN, GND | Same pins as before, but on its own SPI bus now |
 
 Pins can be changed in `config.h` (the TFT's are in the TFT_eSPI setup file).
 
@@ -64,21 +67,24 @@ never have to do that, move the wire to RX2 (GPIO16) and set `XBOX_ON_RX0` to `0
    TFT_eSPI needs the same setup as SentrySync4: copy `Setup_ST7789_ESP32_240x320.h`
    from Sentry's `FINAL/libraries/TFT_eSPI/TFT_eSPI_Setups/` and select it in
    `User_Setup_Select.h`. If you already flashed SentrySync4, this is done.
-   If compiling complains about `SD`, remove any separately installed "SD" library: the
-   ESP32 board package has its own.
 3. Open `firmware/xLumeSentry/xLumeSentry.ino` and edit **`config.h`**:
    Wi-Fi name and password, `OTA_PASSWORD`, your receiver's MAC (`RECEIVER_MAC`, same as
    in SentrySync4), and the LED colour order if needed.
 4. Tools menu: Board **ESP32 Dev Module**, Partition Scheme
    **Minimal SPIFFS (1.9MB APP with OTA)**. This one is required: the default partition is
-   too small; Sentry's own sketch already used 96% of it.
+   too small; Sentry's own sketch already used 96% of it. Its small file area holds the game
+   titles you add on the web page.
 5. Upload over USB the first time, with the Xbox TX wire disconnected from RX0.
    After that, use OTA (below).
 
+**Quick test without editing anything:** `prebuilt/xLumeSentry_v1.1.0_AP-test_merged.bin`
+can be flashed at address `0x0` with a web flasher such as https://esp.huhn.me (the one the
+xLume README uses). With no Wi-Fi configured it starts its own network, **xLume-Sentry**
+(password `xlume360`), and the web page is at http://192.168.4.1.
 
 ## Console setup
 
-1. Update to the **xLume 360** app and Dashlaunch plugin xex files.
+1. Update to the **xLume 360** app and plugin from the matching `xLume360.zip`.
 2. In `launch.ini`: keep `debugout = true`, keep the xLume plugin, and **remove the
    `sentry.xex` plugin line**. The xLume 360 app's Tools tab can check both settings for you.
 3. Reboot. Sentry reporting starts at boot even before you've opened the app. The LED side
@@ -94,18 +100,30 @@ The app's Tools tab also has:
 - **TFT:** at boot it shows the web address. After that it shows the status screen:
   temperatures top left as before, and a **Lighting** panel bottom left with the current effect,
   both colours, brightness, speed, a 12-dot live preview of the strip and the web address.
-  Game changes pop up **Now Playing** from `gamelist.txt` for 8 s, and the Xbox IP for 5 s,
-  like SentrySync4. 
+  Game changes pop up **Now Playing** for 8 s, with the name from the built-in game list, and
+  the Xbox IP for 5 s, like SentrySync4. These pages no longer freeze the board while they're
+  shown.
 - **Web page:** `http://<ip>/` or `http://xlume-sentry.local/`.
-  - **Console:** temperatures, game, title ID, Xbox IP, SD status, Status/UART screen switch.
+  - **Console:** temperatures, game, title ID, Xbox IP, Status/UART screen switch. If the
+    running game isn't in the list, an **add this title** link appears.
   - **Lighting:** effect, both colours, brightness, speed, LED count, Static / Off buttons.
     Changes apply instantly and are saved on the board. The console plugin may change the look
     again when a game starts or ends, and per-game looks win.
   - **UART output:** Sentry's live console, with autoscroll and clear.
+  - **Game list:** type a title ID to see the name the board will show. Enter a name and
+    developer and press **Save** to add a missing game, or to rename one in the built-in list.
+    Your titles are saved on the board, take priority over the built-in list, and survive
+    firmware updates. **Download my titles** saves them as a file. **Import a list** loads lines in
+    `gamelist.txt` format (`4D5307E6*Halo 3*Bungie`), up to 32 KB (about 600 titles) per file.
   - **Firmware update:** see below.
 - **Remote screen (ESP-NOW):** sends the same data packet as SentrySync4, so the receiver
   doesn't need reflashing. As before, the receiver must be on the same Wi-Fi channel as your
   router.
+
+## Changing the built-in game list
+
+Edit `docs/gamelist.txt`, run `python3 tools/make_game_table.py`, and rebuild. For one-off
+additions, the web page is easier.
 
 ## Updating the firmware (one update for both halves)
 
@@ -127,19 +145,54 @@ Your LED look and settings stay.
   the plugin all work unchanged. Speed: 128 is normal, 255 is about twice as fast.
 - **Saving:** the look is saved 3 s after the last change, like the original, but to the
   ESP32's wear-levelled NVS flash.
-- **Timed screens instead of `delay()`:** the boot, IP, Now Playing and SD-missing screens
-  are timed, so the lights, web page and OTA keep running while they show.
+- **No SD card:** Sentry's `gamelist.txt` (2,687 titles) is built into the firmware as a sorted
+  table, so a lookup is instant instead of a scan through a file on the card. Names are shown in
+  plain ASCII, because that's all the TFT font can draw: ™ and ® are dropped, and accents are
+  removed. The 28 titles whose names are all Japanese show as "(Japanese title)"; rename them
+  on the web page if you like. The ESP-NOW packet still reports "SD OK", so the remote screen
+  shows no warning. GPIO 5, 18, 19 and 23 are free.
+- **Timed screens instead of `delay()`:** the boot, IP and Now Playing screens are timed, so
+  the lights, web page and OTA keep running while they show.
 - **Faster background redraw:** the background now redraws row by row instead of pixel by
   pixel. The temperature text no longer cuts into the logo.
-- **Separate SPI buses:** the SD card has its own SPI bus, so it never conflicts with the screen.
 - **The xLume 360 app shows as "xLume 360"** on the Now Playing screen even though it isn't in
   `gamelist.txt`.
 
+## Project layout
 
+```
+firmware/xLumeSentry/   the Arduino sketch
+  config.h              your settings
+  protocol.*            xLume + Sentry line parsers (plain C++, unit-tested)
+  led_engine.*          LED effects, own FreeRTOS task, NVS save
+  sentry.*              temps, game lookup, ESP-NOW, web console buffer
+  gamedb.*              built-in + custom game titles (plain C++, unit-tested)
+  game_table.h          the built-in list, generated from docs/gamelist.txt
+  display.*             TFT pages + lighting panel
+  web.*, web_page.h     web server and page
+docs/                   wiring diagram, previews, gamelist.txt (source of the built-in list)
+hardware/               KiCad 8 carrier PCBs (level shifter / 330R) + generator scripts
+prebuilt/               test binary (AP mode)
+tests/                  host tests (run_tests.sh)
+tools/                  game table, diagram + TFT preview generators
+```
 
+## Status
+
+- **Compiles cleanly** for the ESP32 Dev Module (esp32 3.2.0, FastLED 3.9.20,
+  TFT_eSPI 2.5.43) with no warnings in the project code. It uses 1.43 MB, which is 72% of the
+  OTA app partition, with the game list included. The list lives in flash, not RAM.
+- **Tested off-hardware:**
+  - 36 parser tests.
+  - 42 game-list tests. Every title in `gamelist.txt` is found, and all 2,177 plain-ASCII
+    entries match the file exactly.
+  - 49 end-to-end checks that run the real xLume 360 plugin logic into the firmware's parsers.
+  - The web page, including adding, editing, deleting and importing titles, was checked in a
+    real browser at desktop and phone sizes. The TFT layout was rendered with TFT_eSPI's real fonts.
+- **Not yet run on real hardware.** If reds and blues come out swapped on the TFT, change
+  `TFT_SWAP_RED_BLUE`. If the strip shows wrong colours, change `LED_COLOR_ORDER`.
 
 ## Credits
 
-Combined and redesigned by **FreshLabs Interactive**.
-Sentry by Element, SentrySync by Element, ViolentLamb, Charly Gaber and JFresh. 
-xLume v1 & v2 by Element18592 and xhjuu (MIT).
+Combined and redesigned by FreshLabs Interactive. Sentry by Element, SentrySync by Element,
+ViolentLamb, Charly Gaber and JFresh. xLume v1 & v2 by Element18592 and xhjuu (MIT).
