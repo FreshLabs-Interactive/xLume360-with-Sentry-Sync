@@ -77,14 +77,10 @@ never have to do that, move the wire to RX2 (GPIO16) and set `XBOX_ON_RX0` to `0
 5. Upload over USB the first time, with the Xbox TX wire disconnected from RX0.
    After that, use OTA (below).
 
-**Quick test without editing anything:** `prebuilt/xLumeSentry_v1.1.0_AP-test_merged.bin`
-can be flashed at address `0x0` with a web flasher such as https://esp.huhn.me (the one the
-xLume README uses). With no Wi-Fi configured it starts its own network, **xLume-Sentry**
-(password `xlume360`), and the web page is at http://192.168.4.1.
 
 ## Console setup
 
-1. Update to the **xLume 360** app and plugin from the matching `xLume360.zip`.
+1. Update to the **xLume 360** app and plugin from the matching xex files here in Releases.
 2. In `launch.ini`: keep `debugout = true`, keep the xLume plugin, and **remove the
    `sentry.xex` plugin line**. The xLume 360 app's Tools tab can check both settings for you.
 3. Reboot. Sentry reporting starts at boot even before you've opened the app. The LED side
@@ -158,41 +154,17 @@ Your LED look and settings stay.
 - **The xLume 360 app shows as "xLume 360"** on the Now Playing screen even though it isn't in
   `gamelist.txt`.
 
-## Project layout
 
-```
-firmware/xLumeSentry/   the Arduino sketch
-  config.h              your settings
-  protocol.*            xLume + Sentry line parsers (plain C++, unit-tested)
-  led_engine.*          LED effects, own FreeRTOS task, NVS save
-  sentry.*              temps, game lookup, ESP-NOW, web console buffer
-  gamedb.*              built-in + custom game titles (plain C++, unit-tested)
-  game_table.h          the built-in list, generated from docs/gamelist.txt
-  display.*             TFT pages + lighting panel
-  web.*, web_page.h     web server and page
-docs/                   wiring diagram, previews, gamelist.txt (source of the built-in list)
-hardware/               KiCad 8 carrier PCBs (level shifter / 330R) + generator scripts
-prebuilt/               test binary (AP mode)
-tests/                  host tests (run_tests.sh)
-tools/                  game table, diagram + TFT preview generators
-```
 
 ## Status
 
 - **Compiles cleanly** for the ESP32 Dev Module (esp32 3.2.0, FastLED 3.9.20,
   TFT_eSPI 2.5.43) with no warnings in the project code. It uses 1.43 MB, which is 72% of the
   OTA app partition, with the game list included. The list lives in flash, not RAM.
-- **Tested off-hardware:**
-  - 36 parser tests.
-  - 42 game-list tests. Every title in `gamelist.txt` is found, and all 2,177 plain-ASCII
-    entries match the file exactly.
-  - 49 end-to-end checks that run the real xLume 360 plugin logic into the firmware's parsers.
-  - The web page, including adding, editing, deleting and importing titles, was checked in a
-    real browser at desktop and phone sizes. The TFT layout was rendered with TFT_eSPI's real fonts.
-- **Not yet run on real hardware.** If reds and blues come out swapped on the TFT, change
+- **Note** If reds and blues come out swapped on the TFT, change
   `TFT_SWAP_RED_BLUE`. If the strip shows wrong colours, change `LED_COLOR_ORDER`.
 
 ## Credits
 
-Combined and redesigned by FreshLabs Interactive. Sentry by Element, SentrySync by Element,
+Combined and redesigned by FreshLabs Interactive. SentrySync by Element,
 ViolentLamb, Charly Gaber and JFresh. xLume v1 & v2 by Element18592 and xhjuu (MIT).
