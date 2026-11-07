@@ -8,6 +8,7 @@
 #include "display.h"
 #include "web.h"
 #include "web_page.h"
+#include "gamedb.h"
 
 extern const char* const kFirmwareVersion;
 
@@ -52,7 +53,10 @@ void HandleStatus() {
     j += ",\"dev\":\""; j += JsonEscape(s.developer); j += "\"";
     j += ",\"titleId\":\""; j += JsonEscape(s.titleId); j += "\"";
     j += ",\"xboxIp\":\""; j += JsonEscape(s.xboxIp); j += "\"";
-    j += ",\"sd\":"; j += s.sdOk ? "true" : "false";
+    j += ",\"titleKnown\":"; j += s.titleKnown ? "true" : "false";
+    j += ",\"titles\":"; j += String(gamedb::BuiltinCount());
+    j += ",\"custom\":"; j += String((unsigned)SentryCustomTitles().All().size());
+    j += ",\"storage\":"; j += SentryStorageOk() ? "true" : "false";
     j += ",\"uart\":"; j += s.uartMode ? "true" : "false";
     j += ",\"lastLineAgo\":"; j += s.lastLineMs ? String((millis() - s.lastLineMs) / 1000) : String("-1");
     char b[160];
@@ -93,6 +97,88 @@ void HandleLed() {
 void HandleMode() {
     SentrySetUartMode(server.arg("uart") == "1");
     server.send(200, "text/plain", "OK");
+}
+
+// ---- game list ----------------------------------------------------------------
+String TitleJson(uint32_t id, const std::string& name, const std::string& dev, const char* source) {
+    char hex[9];
+    gamedb::FormatTitleId(id, hex);
+    String j = "{\"id\":\"";
+    j += hex; j += "\",\"name\":\""; j += JsonEscape(name.c_str());
+    j += "\",\"dev\":\""; j += JsonEscape(dev.c_str()); j += "\",\"source\":\""; j += source; j += "\"}";
+    return j;
+}
+
+bool ArgId(uint32_t* id) {
+    if (gamedb::ParseTitleId(server.arg("id").c_str(), id)) return true;
+    server.send(400, "text/plain", "Title ID must be 8 hex digits, like 4D5307E6");
+    return false;
+}
+
+// /api/title?id=4D5307E6 -> what the board would show for this ID
+void HandleTitle() {
+    uint32_t id;
+    if (!ArgId(&id)) return;
+    std::string n, d;
+    gamedb::Source src = gamedb::Lookup(SentryCustomTitles(), id, &n, &d);
+    const char* names[] = { "none", "builtin", "custom" };
+    server.send(200, "application/json", TitleJson(id, n, d, names[src]));
+}
+
+// /api/custom -> all custom titles as JSON
+void HandleCustomList() {
+    String j = "[";
+    bool first = true;
+    for (const gamedb::Title& t : SentryCustomTitles().All()) {
+        if (!first) j += ',';
+        first = false;
+        j += TitleJson(t.id, t.name, t.dev, "custom");
+    }
+    j += "]";
+    server.send(200, "application/json", j);
+}
+
+void SendSaved(bool changed) {
+    if (!changed) { server.send(400, "text/plain", "Nothing changed"); return; }
+    if (!SentrySaveCustomTitles()) { server.send(500, "text/plain", "Couldn't save to flash"); return; }
+    server.send(200, "text/plain", "Saved");
+}
+
+// POST /api/custom/set  id, name, dev
+void HandleCustomSet() {
+    uint32_t id;
+    if (!ArgId(&id)) return;
+    if (!gamedb::Clean(server.arg("name").c_str()).size()) { server.send(400, "text/plain", "Enter a game name"); return; }
+    bool ok = SentryCustomTitles().Set(id, server.arg("name").c_str(), server.arg("dev").c_str());
+    if (!ok) { server.send(400, "text/plain", "The custom list is full"); return; }
+    SendSaved(true);
+}
+
+// POST /api/custom/del  id
+void HandleCustomDel() {
+    uint32_t id;
+    if (!ArgId(&id)) return;
+    SendSaved(SentryCustomTitles().Remove(id));
+}
+
+// POST /api/custom/import  text = lines in gamelist.txt format (added to / replacing existing ones)
+void HandleCustomImport() {
+    const String& text = server.arg("text");
+    if (text.length() > 32 * 1024) { server.send(400, "text/plain", "File too big (32 KB max, about 600 titles)"); return; }   // the body is held in RAM a few times over while parsed
+    gamedb::Custom incoming;
+    size_t n = incoming.Load(text.c_str());
+    size_t added = 0;
+    for (const gamedb::Title& t : incoming.All())
+        added += SentryCustomTitles().Set(t.id, t.name, t.dev) ? 1 : 0;
+    if (!added) { server.send(400, "text/plain", n ? "The custom list is full" : "No title lines found (format: ID*Game*Developer)"); return; }
+    if (!SentrySaveCustomTitles()) { server.send(500, "text/plain", "Couldn't save to flash"); return; }
+    server.send(200, "text/plain", String("Imported ") + added + " titles");
+}
+
+// /custom.txt -> download, same format as gamelist.txt
+void HandleCustomDownload() {
+    server.sendHeader("Content-Disposition", "attachment; filename=custom_titles.txt");
+    server.send(200, "text/plain", SentryCustomTitles().Save().c_str());
 }
 
 // ---- firmware upload --------------------------------------------------------
@@ -150,6 +236,12 @@ void WebBegin(const char* networkDescription) {
     server.on("/api/status", HTTP_GET, HandleStatus);
     server.on("/api/led", HTTP_GET, HandleLed);
     server.on("/api/mode", HTTP_GET, HandleMode);
+    server.on("/api/title", HTTP_GET, HandleTitle);
+    server.on("/api/custom", HTTP_GET, HandleCustomList);
+    server.on("/api/custom/set", HTTP_POST, HandleCustomSet);
+    server.on("/api/custom/del", HTTP_POST, HandleCustomDel);
+    server.on("/api/custom/import", HTTP_POST, HandleCustomImport);
+    server.on("/custom.txt", HTTP_GET, HandleCustomDownload);
     server.on("/update", HTTP_POST, HandleUpdateDone, HandleUpdateUpload);
     server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
     server.begin();

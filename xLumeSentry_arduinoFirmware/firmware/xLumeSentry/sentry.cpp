@@ -1,11 +1,12 @@
 #include <Arduino.h>
-#include <SD.h>
+#include <LittleFS.h>
 #include <esp_now.h>
 #include <WiFi.h>
 #include "config.h"
 #include "protocol.h"
 #include "sentry.h"
 #include "display.h"
+#include "gamedb.h"
 
 namespace {
 
@@ -14,6 +15,9 @@ struct_message g_msg;
 bool g_espNow = false;
 uint32_t g_lastEspNow = 0;
 bool g_espNowDirty = false;
+gamedb::Custom g_custom;
+bool g_fsOk = false;
+const char* const kCustomFile = "/custom.txt";
 
 const int kWebLines = 200;
 String g_web[kWebLines];
@@ -31,34 +35,24 @@ void SendEspNow() {
     g_msg.gTemp = g_state.temps[1];
     g_msg.eTemp = g_state.temps[2];
     g_msg.mTemp = g_state.temps[3];
-    g_msg.sd = g_state.sdOk;
+    g_msg.sd = true;
     g_msg.uart = g_state.uartMode;
     esp_now_send(RECEIVER_MAC, (const uint8_t*)&g_msg, sizeof(g_msg));
 #endif
 }
 
-// gamelist.txt lines look like: 4d5307e6*Halo 3*Bungie
 bool LookUpTitle(const char* titleId, char* game, size_t gameSize, char* dev, size_t devSize) {
-    if (!g_state.sdOk) return false;
-    File f = SD.open("/gamelist.txt");
-    if (!f) return false;
-    bool found = false;
-    while (f.available()) {
-        String line = f.readStringUntil('\n');
-        line.trim();
-        int a = line.indexOf('*');
-        if (a <= 0) continue;
-        if (!line.substring(0, a).equalsIgnoreCase(titleId)) continue;
-        int b = line.indexOf('*', a + 1);
-        String g = b > a ? line.substring(a + 1, b) : line.substring(a + 1);
-        String d = b > a ? line.substring(b + 1) : String("");
-        CopyStr(game, gameSize, g.c_str());
-        CopyStr(dev, devSize, d.c_str());
-        found = true;
-        break;
+    uint32_t id;
+    if (!gamedb::ParseTitleId(titleId, &id)) return false;
+    std::string n, d;
+    if (gamedb::Lookup(g_custom, id, &n, &d) == gamedb::NONE) {
+        if (id != 0x584C4D45) return false;        // the xLume 360 app itself
+        n = "xLume 360";
+        d = "FreshLabs Interactive";
     }
-    f.close();
-    return found;
+    CopyStr(game, gameSize, n.c_str());
+    CopyStr(dev, devSize, d.c_str());
+    return true;
 }
 
 void OnTitle(const char* id, uint32_t now) {
@@ -73,13 +67,12 @@ void OnTitle(const char* id, uint32_t now) {
 
     char game[32] = "", dev[32] = "";
     bool known = LookUpTitle(upper, game, sizeof(game), dev, sizeof(dev));
-    if (!known && !strcmp(upper, "584C4D45")) {   // the xLume 360 app itself
-        CopyStr(game, sizeof(game), "xLume 360");
-        CopyStr(dev, sizeof(dev), "FreshLabs Interactive");
-        known = true;
-    }
+    g_state.titleKnown = known;
     if (!known) {
-        Serial.printf("Title ID %s not in gamelist.txt\n", upper);
+        // Not in the list: clear the old name so the web page doesn't show the previous game,
+        // and offer the ID there for adding. No pop-up, as before.
+        Serial.printf("Title ID %s not in the game list (add it on the web page)\n", upper);
+        g_state.gameTitle[0] = g_state.developer[0] = '\0';
         return;
     }
     CopyStr(g_state.gameTitle, sizeof(g_state.gameTitle), game);
@@ -93,12 +86,64 @@ void OnTitle(const char* id, uint32_t now) {
 
 } // namespace
 
-void SentryBegin(bool sdOk, bool espNowOk) {
+void SentryBegin(bool espNowOk) {
     memset(&g_state, 0, sizeof(g_state));
     memset(&g_msg, 0, sizeof(g_msg));
-    g_state.sdOk = sdOk;
     g_espNow = espNowOk;
-    g_msg.sd = sdOk;
+    g_msg.sd = true;
+
+    // Custom titles live in the flash file system (the partition SPIFFS used to have).
+    // begin(true) formats it the first time, which is fine: it only holds this file.
+    g_fsOk = LittleFS.begin(true);
+    if (g_fsOk) {
+        File f = LittleFS.open(kCustomFile, "r");
+        if (f) {
+            std::string text;
+            text.reserve(f.size());
+            while (f.available()) {
+                char buf[256];
+                int n = f.read((uint8_t*)buf, sizeof(buf));
+                if (n <= 0) break;
+                text.append(buf, n);
+            }
+            f.close();
+            g_custom.Load(text);
+        }
+    }
+    Serial.printf("Game list: %u built in, %u custom%s\n", (unsigned)gamedb::BuiltinCount(),
+                  (unsigned)g_custom.All().size(), g_fsOk ? "" : " (flash file system not available)");
+}
+
+gamedb::Custom& SentryCustomTitles() { return g_custom; }
+bool SentryStorageOk() { return g_fsOk; }
+
+bool SentrySaveCustomTitles() {
+    bool ok = false;
+    if (g_fsOk) {
+        std::string text = g_custom.Save();
+        File f = LittleFS.open("/custom.tmp", "w");
+        if (f) {
+            ok = f.write((const uint8_t*)text.data(), text.size()) == text.size();
+            f.close();
+            // Write to a temp file, then swap, so a power cut can't leave half a list.
+            if (ok) ok = LittleFS.remove(kCustomFile) || !LittleFS.exists(kCustomFile);
+            if (ok) ok = LittleFS.rename("/custom.tmp", kCustomFile);
+        }
+    }
+    // If the game that's running was just added or renamed, show the new name.
+    if (g_state.titleId[0]) {
+        char game[32] = "", dev[32] = "";
+        bool known = LookUpTitle(g_state.titleId, game, sizeof(game), dev, sizeof(dev));
+        g_state.titleKnown = known;
+        CopyStr(g_state.gameTitle, sizeof(g_state.gameTitle), game);
+        CopyStr(g_state.developer, sizeof(g_state.developer), dev);
+        if (known) {
+            CopyStr(g_msg.gameTitle, sizeof(g_msg.gameTitle), game);
+            CopyStr(g_msg.developer, sizeof(g_msg.developer), dev);
+            g_espNowDirty = true;
+        }
+    }
+    return ok;
 }
 
 const SentryState& SentryGet() { return g_state; }

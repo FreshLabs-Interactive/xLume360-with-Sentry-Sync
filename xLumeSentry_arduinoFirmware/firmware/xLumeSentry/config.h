@@ -51,11 +51,9 @@ static const uint8_t RECEIVER_MAC[6] = { 0xa0, 0x85, 0xe3, 0x4c, 0xf0, 0x28 };
 // app/plugin already caps brightness; this is a second safety net.
 #define LED_MAX_MILLIAMPS 0
 
-// SD card (gamelist.txt). On its own SPI bus so it never fights the screen.
-#define SD_CS_PIN        5
-#define SD_SCK_PIN       18
-#define SD_MISO_PIN      19
-#define SD_MOSI_PIN      23
+// No SD card: the game list for "Now Playing" is built into the firmware
+// (game_table.h). Add or rename titles on the web page. GPIO 5, 18, 19 and 23
+// are free.
 
 // The TFT pins are set in the TFT_eSPI library setup file (same as Sentry):
 //   MOSI 21, SCLK 22, CS 15, DC 2, RST 4   - see README "TFT_eSPI setup".

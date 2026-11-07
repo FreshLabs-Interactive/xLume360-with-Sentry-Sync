@@ -3,7 +3,6 @@
 #include "config.h"
 #include "protocol.h"
 #include "display.h"
-#include "display_assets.h"
 #include "led_engine.h"
 #include "sentry.h"
 #include "JFresh_AI_128x64.h"
@@ -17,7 +16,7 @@ uint16_t C(uint8_t r, uint8_t g, uint8_t b) {
     return TFT_SWAP_RED_BLUE ? tft.color565(b, g, r) : tft.color565(r, g, b);
 }
 
-enum Page { PAGE_NONE, PAGE_BOOT, PAGE_SD, PAGE_XBOXIP, PAGE_NOWPLAYING, PAGE_OTA };
+enum Page { PAGE_NONE, PAGE_BOOT, PAGE_XBOXIP, PAGE_NOWPLAYING, PAGE_OTA };
 
 struct Overlay {
     Page page;
@@ -201,16 +200,6 @@ void DrawOverlay(const Overlay& o, uint32_t elapsed) {
         }
         break;
     }
-    case PAGE_SD:
-        if (elapsed == 0) {
-            tft.fillScreen(TFT_BLACK);
-            tft.drawBitmap(100, 120, kSdQuestionBitmap, 128, 64, C(255, 100, 0));
-            tft.setTextSize(2);
-            tft.setTextColor(C(255, 255, 0), TFT_BLACK);
-            tft.setCursor(30, 10);
-            tft.println("  SD Card Not Found!");
-        }
-        break;
     case PAGE_XBOXIP:
         if (elapsed == 0) {
             tft.fillScreen(TFT_BLACK);
@@ -284,7 +273,6 @@ void DisplayBegin() {
 void DisplayShowBoot(const char* l1, const char* l2, const char* l3, const char* l4) {
     Enqueue(PAGE_BOOT, 5000, l1, l2, l3, l4);
 }
-void DisplayShowSdMissing() { Enqueue(PAGE_SD, 5000, "", "", "", ""); }
 void DisplayShowXboxIp(const char* ip) { Enqueue(PAGE_XBOXIP, 5000, ip, "", "", ""); }
 void DisplayShowNowPlaying(const char* game, const char* id, const char* dev) {
     Enqueue(PAGE_NOWPLAYING, 8000, game, id, dev, "");

@@ -3,7 +3,7 @@
 // Status screen = SentrySync background + temperatures (top left) + a new
 // "Lighting" panel (bottom left) showing the current effect, colours,
 // brightness and a live preview of the strip.
-// Pop-up pages (boot, Xbox IP, Now Playing, SD missing, firmware update) are
+// Pop-up pages (boot, Xbox IP, Now Playing, firmware update) are
 // timed instead of using delay(), so the LEDs and web page never freeze.
 #pragma once
 #include <Arduino.h>
@@ -12,7 +12,6 @@ void DisplayBegin();
 void DisplayUpdate(uint32_t now);                 // call every loop()
 
 void DisplayShowBoot(const char* line1, const char* line2, const char* line3, const char* line4);
-void DisplayShowSdMissing();
 void DisplayShowXboxIp(const char* ip);
 void DisplayShowNowPlaying(const char* game, const char* titleId, const char* developer);
 void DisplaySetUartMode(bool uart);

@@ -2,7 +2,7 @@
 //  xLume + Sentry  -  one ESP32 for both projects
 //
 //  * xLume:  LED strip effects controlled from the console (xLume 360 app/plugin)
-//  * Sentry: 2" TFT status screen, SD game list, web console, ESP-NOW remote
+//  * Sentry: 2" TFT status screen, built-in game list, web console, ESP-NOW remote
 //
 //  Both listen to the same wire: the Xbox 360 debug UART (DbgPrint output).
 //    "[xLume] - ..."  lines -> LED engine      (led_engine.cpp)
@@ -17,8 +17,6 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
-#include <SD.h>
-#include <SPI.h>
 #include <esp_now.h>
 #include "config.h"
 #include "protocol.h"
@@ -27,13 +25,12 @@
 #include "display.h"
 #include "web.h"
 
-extern const char* const kFirmwareVersion = "1.0.0";
+extern const char* const kFirmwareVersion = "1.1.0";
 
 namespace {
 
 const size_t kLineMax = 200;
 QueueHandle_t g_lines = nullptr;     // UART lines for loop() (Sentry, web log)
-SPIClass g_sdSpi(HSPI);              // SD on its own bus; the TFT uses VSPI
 char g_netText[64] = "";
 
 // The port the Xbox talks on (see XBOX_ON_RX0 in config.h).
@@ -133,10 +130,6 @@ void setup() {
     LedBegin();                                   // LEDs come back to the saved look right away
     DisplayBegin();
 
-    g_sdSpi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
-    bool sdOk = SD.begin(SD_CS_PIN, g_sdSpi);
-    Serial.println(sdOk ? "SD card OK" : "SD card not found");
-
     bool sta = ConnectWifi();
     String ip;
     if (sta) {
@@ -152,10 +145,9 @@ void setup() {
     }
     Serial.printf("Web page: http://%s/\n", ip.c_str());
     DisplaySetWebAddress(("web: " + ip).c_str());
-    if (!sdOk) DisplayShowSdMissing();
 
     bool espNow = StartEspNow();
-    SentryBegin(sdOk, espNow);
+    SentryBegin(espNow);                          // also loads the custom game titles
     WebBegin(g_netText);
     StartOta();                                   // also starts mDNS (xlume-sentry.local)
 
